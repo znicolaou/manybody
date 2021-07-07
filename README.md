@@ -1,5 +1,5 @@
 # newton
-Integrate Newton's equations on a GPU
+Integrate Newton's equations on a GPU. The interaction is a soft particle potential, and the integrator is a embedding 4/5 Runge-Kutta stepper with adaptive timestepping.
 
 # Installation
 Create a conda environment with required packages:
@@ -33,7 +33,14 @@ filebase is base file name for output.
 ```
 
 # Output files
+The newton script creates output files filebase.out, filebasefs.dat, filebasetimes.dat, and filebasestates.dat.
+
+filebase.out contains parameters that ran the files and runtime output.
+
 filebasefs.dat contains the final states of the system.
+
+filebasetimes.dat contains the timesteps chosen by the integrator.
+
 filebasestates.dat contains dense output of the states and at each time step for t>t3.
 
 # Input files
