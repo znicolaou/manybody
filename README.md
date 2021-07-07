@@ -30,7 +30,7 @@ gpu is index of the gpu. Default 0.
 filebase is base file name for output.  
 ```
 
-The positional argument filebase is a string which specifies input and output file locations.
+The required positional argument filebase is a string which specifies input and output file locations. Other arguments are optional and modify the simulation parameters.
 
 # Output files
 The newton script creates output files filebase.out, filebasefs.dat, filebasetimes.dat, and filebasestates.dat.
