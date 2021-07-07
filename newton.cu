@@ -236,9 +236,8 @@ int main (int argc, char* argv[]) {
       }
     }
     if (help) {
-      printf("usage:\t2dcgle [-h] [-v] [-N N] [-L L] [-R R] [-V V] [-H H]\n");
-      printf("\t[-t t1] [-A t3] [-d dt] [-s seed] \n");
-      printf("\t[-r rtol] [-a atol] [-g gpu] filebase \n\n");
+      printf("usage:\tnewton [-h] [-v] [-N N] [-L L] [-R R] [-V V] [-H H]\n");
+      printf("\t[-t t1] [-A t3] [-d dt] [-s seed] [-r rtol] [-a atol] [-g gpu] filebase  \n\n");
       printf("-h for help \n");
       printf("-v for verbose \n");
       printf("N is number of particles. Default 2048. \n");
@@ -250,7 +249,6 @@ int main (int argc, char* argv[]) {
       printf("t3 is time stop outputting dense timestep data. Default 0. \n");
       printf("dt is the time between outputs. Default 1e0. \n");
       printf("seed is random seed. Default 1. \n");
-      printf("diff is 0 for finite diff, 1 for pseudospectral. Default 1.\n");
       printf("rtol is relative error tolerance. Default 1e-6.\n");
       printf("atol is absolute error tolerance. Default 1e-6.\n");
       printf("gpu is index of the gpu. Default 0.\n");
