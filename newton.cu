@@ -127,7 +127,7 @@ __global__ void order (double* y, int *p1, int *p2, int M, double L, double R, i
         d=d3;
       norm=norm+d*d;
     }
-    if(sqrt(norm)<R){
+    if(sqrt(norm)<2*R){
       atomicAdd(order,1);
     }
   }
