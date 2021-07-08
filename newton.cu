@@ -111,6 +111,27 @@ __global__ void accept (double* y, double* k1, double* k2, double* k3, double* k
       y[i]=y[i]+a50*k1[i]+a51*k2[i]+a52*k3[i]+a53*k4[i]+a54*k5[i]+a55*k6[i];
   }
 }
+__global__ void order (double t, double* y, double* f, int *p1, int *p2, int M, double L, double R, int *order, int dim) {
+  int i = blockIdx.x*blockDim.x + threadIdx.x;
+  if(i<M){
+    double norm=0;
+    for (int k=0; k<dim; k++){
+      //Find the smallest periodic distance in each dimension, and calculate the norm
+      double d1=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k];
+      double d2=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k]-L;
+      double d3=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k]+L;
+      double d=d1;
+      if(fabs(d)>fabs(d2))
+        d=d2;
+      if(fabs(d)>fabs(d3))
+        d=d3;
+      norm=norm+d*d;
+    }
+    if(sqrt(norm)<R){
+      atomicAdd(order,1);
+    }
+  }
+}
 
 //Attempt a RK step
 void rkf45 (cublasHandle_t handle, double *t, double *h, double *y, double *ytemp, int *p1, int *p2, double *k1, double *k2, double *k3, double *k4, double *k5, double *k6, double atl, double *yerr, double rtl){
@@ -351,8 +372,11 @@ int main (int argc, char* argv[]) {
     cublasSetVector (M, sizeof(int), p2loc, 1, p2, 1);
 
     //Main integration loop
+    int order=0;
     while(t<t1+dt){
       t0=t;
+      order<<<(M+255)/256, 256>>>((*t)+(*h)*c[5],ytemp,k6,p1,p2, M, L, R, &order, dim);
+      printf("%i\n",order);
       if(t>=t3){ //Output
         cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
         fwrite(yloc,sizeof(double),(2*dim)*N,outstates);
