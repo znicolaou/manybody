@@ -372,14 +372,14 @@ int main (int argc, char* argv[]) {
     cublasSetVector (M, sizeof(int), p2loc, 1, p2, 1);
 
     //Main integration loop
-    int orderloc[1];
-    int *order;
+    int ordloc[1];
+    int *ord;
     cudaMalloc ((void**)&order, 1*sizeof(int));
     while(t<t1+dt){
       t0=t;
-      order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, order, dim);
-      cublasGetVector (1, sizeof(int), order, 1, orderloc, 1);
-      printf("%i\n",orderloc[0]);
+      order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, ord, dim);
+      cublasGetVector (1, sizeof(int), ord, 1, ordloc, 1);
+      printf("%i\n",ordloc[0]);
       if(t>=t3){ //Output
         cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
         fwrite(yloc,sizeof(double),(2*dim)*N,outstates);
