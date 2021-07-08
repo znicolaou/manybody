@@ -333,6 +333,7 @@ int main (int argc, char* argv[]) {
     for (i=0; i<argc; i++){
       fprintf(out, "%s ", argv[i]);
     }
+    fprintf(out, "\n");
     fflush(out);
 
     //Initial conditions
