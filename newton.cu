@@ -286,7 +286,7 @@ int main (int argc, char* argv[]) {
     strcat(file, "states.dat");
     outstates = fopen(file,"w");
     strcpy(file,filebase);
-    strcat(file,".out");
+    strcat(file,"out.dat");
     out = fopen(file,"w");
     strcpy(file,filebase);
     strcat(file, "times.dat");
