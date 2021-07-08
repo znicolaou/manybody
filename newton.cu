@@ -381,6 +381,13 @@ int main (int argc, char* argv[]) {
     while(t<t1+dt){
       t0=t;
       if(t>=t3){ //Output
+        ordloc[0]=0;
+        cublasSetVector (1, sizeof(int), ordloc, 1, ord, 1);
+        order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, ord, dim);
+        cublasGetVector (1, sizeof(int), ord, 1, ordloc, 1);
+        fwrite(ordloc,sizeof(int),1,outorder);
+        printf("%i\n",ordloc[0]);
+        
         cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
         fwrite(yloc,sizeof(double),(2*dim)*N,outstates);
         fflush(outstates);
@@ -396,12 +403,6 @@ int main (int argc, char* argv[]) {
           fflush(out);
         }
         if(t>tlast){
-          ordloc[0]=0;
-          cublasSetVector (1, sizeof(int), ordloc, 1, ord, 1);
-          order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, ord, dim);
-          cublasGetVector (1, sizeof(int), ord, 1, ordloc, 1);
-          fwrite(ordloc,sizeof(int),1,outorder);
-
           fwrite(&t,sizeof(double),1,outtimes);
           tlast=t;
         }
