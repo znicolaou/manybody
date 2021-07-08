@@ -1,0 +1,6 @@
+2048 2 32.000000 0.500000 10.000000 0.000000 0.100000
+./newton -N 2048 data/tight 
+Using random initial conditions
+
+steps: 2519
+runtime: 22.751916

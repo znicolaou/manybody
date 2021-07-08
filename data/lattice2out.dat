@@ -1,0 +1,6 @@
+2016 2 32.000000 0.400000 10.000000 0.000000 0.100000
+./newton -N 2016 -R 0.4 data/lattice2 
+Using initial conditions from file
+
+steps: 312
+runtime: 2.954887

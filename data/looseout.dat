@@ -1,0 +1,6 @@
+512 2 32.000000 0.500000 10.000000 0.000000 0.100000
+./newton -N 512 data/loose 
+Using random initial conditions
+
+steps: 1285
+runtime: 3.552552
