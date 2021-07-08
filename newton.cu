@@ -374,7 +374,7 @@ int main (int argc, char* argv[]) {
     //Main integration loop
     int ordloc[1];
     int *ord;
-    cudaMalloc ((void**)&order, 1*sizeof(int));
+    cudaMalloc ((void**)&ord, 1*sizeof(int));
     while(t<t1+dt){
       t0=t;
       order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, ord, dim);
