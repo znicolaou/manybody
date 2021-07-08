@@ -187,13 +187,13 @@ int main (int argc, char* argv[]) {
     int gpu, seed;
     double t1, t3, dt;
     char* filebase;
-    N=2048;
+    N=512;
     L=32;
     R=0.5;
     V=0.1;
-    H=10;
+    H=100;
     dim=2;
-    t1=1e2;
+    t1=1e1;
     t3=0;
     dt=1e-1;
     gpu=0;
