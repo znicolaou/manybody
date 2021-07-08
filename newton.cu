@@ -111,7 +111,7 @@ __global__ void accept (double* y, double* k1, double* k2, double* k3, double* k
       y[i]=y[i]+a50*k1[i]+a51*k2[i]+a52*k3[i]+a53*k4[i]+a54*k5[i]+a55*k6[i];
   }
 }
-__global__ void order (double t, double* y, double* f, int *p1, int *p2, int M, double L, double R, int *order, int dim) {
+__global__ void order (double* y, int *p1, int *p2, int M, double L, double R, int *order, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i<M){
     double norm=0;
@@ -375,7 +375,7 @@ int main (int argc, char* argv[]) {
     int order=0;
     while(t<t1+dt){
       t0=t;
-      order<<<(M+255)/256, 256>>>((*t)+(*h)*c[5],ytemp,k6,p1,p2, M, L, R, &order, dim);
+      order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, &order, dim);
       printf("%i\n",order);
       if(t>=t3){ //Output
         cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
