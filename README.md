@@ -10,9 +10,8 @@ The newton.cu program can be compiled on a computer with the nvidia cuda compile
 # Usage
 Running `./newton -h` will produce the following help message:
 ```
-usage:	2dcgle [-h] [-v] [-N N] [-L L] [-R R] [-V V] [-H H]
-	[-t t1] [-A t3] [-d dt] [-s seed] 
-	[-r rtol] [-a atol] [-g gpu] filebase 
+usage:	newton [-h] [-v] [-N N] [-L L] [-R R] [-V V] [-H H]
+	[-t t1] [-A t3] [-d dt] [-s seed] [-r rtol] [-a atol] [-g gpu] filebase  
 
 -h for help 
 -v for verbose 
@@ -25,12 +24,13 @@ t1 is total integration time. Default 1e2.
 t3 is time stop outputting dense timestep data. Default 0. 
 dt is the time between outputs. Default 1e0. 
 seed is random seed. Default 1. 
-diff is 0 for finite diff, 1 for pseudospectral. Default 1.
 rtol is relative error tolerance. Default 1e-6.
 atol is absolute error tolerance. Default 1e-6.
 gpu is index of the gpu. Default 0.
-filebase is base file name for output. 
+filebase is base file name for output.  
 ```
+
+The required positional argument filebase is a string which specifies input and output file locations. Other arguments are optional and modify the simulation parameters.
 
 # Output files
 The newton script creates output files filebase.out, filebasefs.dat, filebasetimes.dat, and filebasestates.dat.
