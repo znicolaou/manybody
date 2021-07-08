@@ -215,6 +215,9 @@ int main (int argc, char* argv[]) {
           case 'D':
               dim = (int)atoi(optarg);
               break;
+          case 'R':
+              R = (double)atof(optarg);
+              break;
           case 'V':
               V = (double)atof(optarg);
               break;
