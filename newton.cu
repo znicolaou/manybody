@@ -280,7 +280,7 @@ int main (int argc, char* argv[]) {
     //Initialization
     double t=0,h,t0;
     int i,j,k,steps=0;
-    FILE *outlast, *outstates,*outtimes, *out, *in;
+    FILE *outlast, *outstates,*outtimes, *outorder, *out, *in;
     char file[256];
     strcpy(file,filebase);
     strcat(file, "states.dat");
@@ -291,6 +291,9 @@ int main (int argc, char* argv[]) {
     strcpy(file,filebase);
     strcat(file, "times.dat");
     outtimes = fopen(file,"w");
+    strcpy(file,filebase);
+    strcat(file, "orders.dat");
+    outorder = fopen(file,"w");
     double *yloc;
     int *p1loc, *p2loc;
     double *y, *f, *ytemp, *yerr, *k1, *k2, *k3, *k4, *k5, *k6;
@@ -377,9 +380,6 @@ int main (int argc, char* argv[]) {
     cudaMalloc ((void**)&ord, 1*sizeof(int));
     while(t<t1+dt){
       t0=t;
-      order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, ord, dim);
-      cublasGetVector (1, sizeof(int), ord, 1, ordloc, 1);
-      printf("%i\n",ordloc[0]);
       if(t>=t3){ //Output
         cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
         fwrite(yloc,sizeof(double),(2*dim)*N,outstates);
@@ -396,6 +396,12 @@ int main (int argc, char* argv[]) {
           fflush(out);
         }
         if(t>tlast){
+          ordloc[0]=0;
+          cublasSetVector (1, sizeof(int), ordloc, 1, ord, 1);
+          order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, ord, dim);
+          cublasGetVector (1, sizeof(int), ord, 1, ordloc, 1);
+          fwrite(ordloc,sizeof(int),1,outorder);
+
           fwrite(&t,sizeof(double),1,outtimes);
           tlast=t;
         }
@@ -421,6 +427,7 @@ int main (int argc, char* argv[]) {
     fprintf(out,"runtime: %f\n",end.tv_sec-start.tv_sec + 1e-6*(end.tv_usec-start.tv_usec));
     fclose(outstates);
     fclose(outtimes);
+    fclose(outorder);
     fclose(out);
 
 
