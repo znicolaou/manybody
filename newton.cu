@@ -63,8 +63,8 @@ __global__ void dydt (double t, double* y, double* f, int *p1, int *p2, int M, d
           d=d2;
         if(fabs(d)>fabs(d3))
           d=d3;
-        atomicAdd(&(f[(2*dim)*p1[i]+dim+k]), -H*(d/sqrt(norm))*pow(2*R-sqrt(norm),1.5));
-        atomicAdd(&(f[(2*dim)*p2[i]+dim+k]), H*(d/sqrt(norm))*pow(2*R-sqrt(norm),1.5));
+        atomicAdd(&(f[(2*dim)*p1[i]+dim+k]), -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*R),1.5));
+        atomicAdd(&(f[(2*dim)*p2[i]+dim+k]), H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*R),1.5));
       }
     }
   }
@@ -111,7 +111,8 @@ __global__ void accept (double* y, double* k1, double* k2, double* k3, double* k
       y[i]=y[i]+a50*k1[i]+a51*k2[i]+a52*k3[i]+a53*k4[i]+a54*k5[i]+a55*k6[i];
   }
 }
-__global__ void order (double* y, int *p1, int *p2, int M, double L, double R, int *order, int dim) {
+//We can keep a list of all particles making contact at each step instead
+__global__ void order (double* y, int *p1, int *p2, int *orders, int M, double L, double R, int *ord, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i<M){
     double norm=0;
@@ -128,7 +129,9 @@ __global__ void order (double* y, int *p1, int *p2, int M, double L, double R, i
       norm=norm+d*d;
     }
     if(sqrt(norm)<2*R){
-      atomicAdd(order,1);
+      int ind=atomicAdd(ord,1);
+      orders[2*ind]=p1[i];
+      orders[2*ind+1]=p2[i];
     }
   }
 }
@@ -298,9 +301,9 @@ int main (int argc, char* argv[]) {
     strcat(file, "orders.dat");
     outorder = fopen(file,"w");
     double *yloc;
-    int *p1loc, *p2loc;
+    int *p1loc, *p2loc, *ordersloc;
     double *y, *f, *ytemp, *yerr, *k1, *k2, *k3, *k4, *k5, *k6;
-    int *p1, *p2;
+    int *p1, *p2, *orders;
     cublasStatus_t stat;
     cublasHandle_t handle;
     cudaSetDevice(gpu);
@@ -313,6 +316,7 @@ int main (int argc, char* argv[]) {
     yloc = (double*)calloc((2*dim)*N,sizeof(double));
     p1loc = (int*)calloc(M,sizeof(int));
     p2loc = (int*)calloc(M,sizeof(int));
+    ordersloc = (int*)calloc(2*M,sizeof(int));
     size_t fr, total;
     cudaMemGetInfo (&fr, &total);
     printf("GPU Memory: %li %li\n", fr, total);
@@ -326,6 +330,7 @@ int main (int argc, char* argv[]) {
     cudaMalloc ((void**)&ytemp, (2*dim)*N*sizeof(double));
     cudaMalloc ((void**)&p1, M*sizeof(int));
     cudaMalloc ((void**)&p2, M*sizeof(int));
+    cudaMalloc ((void**)&orders, 2*M*sizeof(int));
     cudaMalloc ((void**)&k1, (2*dim)*N*sizeof(double));
     cudaMalloc ((void**)&k2, (2*dim)*N*sizeof(double));
     cudaMalloc ((void**)&k3, (2*dim)*N*sizeof(double));
@@ -390,10 +395,11 @@ int main (int argc, char* argv[]) {
       if(t>=t3){ //Output
         ordloc[0]=0;
         cublasSetVector (1, sizeof(int), ordloc, 1, ord, 1);
-        order<<<(M+255)/256, 256>>>(y,p1,p2, M, L, R, ord, dim);
+        order<<<(M+255)/256, 256>>>(y,p1,p2, orders, M, L, R, ord, dim);
         cublasGetVector (1, sizeof(int), ord, 1, ordloc, 1);
+        cublasGetVector (2*M, sizeof(int), orders, 1, ordersloc, 1);
         fwrite(ordloc,sizeof(int),1,outorder);
-
+        fwrite(ordersloc,sizeof(int),2*ordloc[0],outorder);
         cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
         fwrite(yloc,sizeof(double),(2*dim)*N,outstates);
         fflush(outstates);
