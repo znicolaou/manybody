@@ -1,0 +1,6 @@
+1166 2 200.000000 100.000000 0.000000 0.500000 32.000000 0.250000 0.550000 0.100000 1000.000000
+Using initial conditions from file
+./newton -N 1166 -q 0.25 -R 0.55 -T 1e2 -t 2e2 -A 0 -d 0.5 -H 1000 data/quasistatic 
+
+steps: 34333
+runtime: 31.998170

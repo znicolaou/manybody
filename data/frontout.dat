@@ -1,6 +1,0 @@
-1024 2 32.000000 0.500000 10.000000 0.000000 0.100000
-./newton -N 1024 data/front 
-Using initial conditions from file
-
-steps: 1214
-runtime: 4.552890

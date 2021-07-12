@@ -1,6 +1,0 @@
-1166 2 32.000000 0.600000 100.000000 90.000000 0.100000
-./newton -N 1166 -t 1e2 -A 9e1 -R 0.6 data/lattice 
-Using initial conditions from file
-
-steps: 5647
-runtime: 11.627802
