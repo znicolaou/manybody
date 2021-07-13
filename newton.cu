@@ -23,7 +23,9 @@ const double c[6] = {0.0, 1.0/4, 3.0/8, 12.0/13, 1.0, 1.0/2};
 int M,N,dim;
 double t1, t2, t3, dt, L, R0, R, V, H;
 
+//Should we separate the RK stepper into its own C file, and make a header??
 //It would be better to fuse all these kernels if we can
+
 //Set the derivative for the position variables
 __global__ void dydt0 (double t, double* y, double* f, int *p1, int *p2, int N, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
@@ -34,8 +36,15 @@ __global__ void dydt0 (double t, double* y, double* f, int *p1, int *p2, int N, 
     }
   }
 }
+//The interaction force give separation sqrt(norm) and distance d along a specified axis
+//For frictional spheres, we need to allow tangential response, and we should allow heterogeneous sizes
+//We can include other interactions too
+__device__ double force(double d, double norm, double H, double Rt){
+  if(sqrt(norm) < 2*Rt)
+    return -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5);
+  return 0;
+}
 //Set the derivative for the velocity variables
-//Add quasistatic variation in L,R,H?
 __global__ void dydt (double t, double t2, double* y, double* f, int *p1, int *p2, int M, double L, double R, double H, double R0, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i<M){
@@ -56,20 +65,20 @@ __global__ void dydt (double t, double t2, double* y, double* f, int *p1, int *p
         d=d3;
       norm=norm+d*d;
     }
-    //Calculate the soft interaction if the particles are in contact
-    if(sqrt(norm) < 2*Rt){
-      for (int k=0; k<dim; k++){
-        double d1=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k];
-        double d2=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k]-L;
-        double d3=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k]+L;
-        double d=d1;
-        if(fabs(d)>fabs(d2))
-          d=d2;
-        if(fabs(d)>fabs(d3))
-          d=d3;
-        atomicAdd(&(f[(2*dim)*p1[i]+dim+k]), -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5));
-        atomicAdd(&(f[(2*dim)*p2[i]+dim+k]), H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5));
-      }
+    //Calculate the interaction force
+    for (int k=0; k<dim; k++){
+      double d1=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k];
+      double d2=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k]-L;
+      double d3=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k]+L;
+      double d=d1;
+      if(fabs(d)>fabs(d2))
+        d=d2;
+      if(fabs(d)>fabs(d3))
+        d=d3;
+      // atomicAdd(&(f[(2*dim)*p1[i]+dim+k]), -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5));
+      // atomicAdd(&(f[(2*dim)*p2[i]+dim+k]), H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5));
+      atomicAdd(&(f[(2*dim)*p1[i]+dim+k]), force(d, norm, H, Rt));
+      atomicAdd(&(f[(2*dim)*p2[i]+dim+k]), force(-d, norm, H, Rt));
     }
   }
 }
