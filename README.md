@@ -1,16 +1,16 @@
-# newton
-Integrate Newton's equations on a GPU. The interaction is a soft particle potential, and the integrator is a embedding 4/5 Runge-Kutta stepper with adaptive timestepping.
+# manybody
+Integrate many-body Newton's equations on a GPU. The interaction is a soft particle potential, and the integrator is a embedding 4/5 Runge-Kutta stepper with adaptive timestepping.
 
 # Installation
 Create a conda environment with required packages:
 `conda create -n newton_env -c conda-forge numpy scipy jupyter matplotlib`.  Activate this environment to use the plot jupyter notebook: `conda activate newton_env`. 
 
-The newton.cu program can be compiled on a computer with the nvidia cuda compiler with `nvcc -lcublas -lcuda -arch=sm_61 -o newton newton.cu`.
+The manybody program can be compiled on a computer with the nvidia cuda compiler with `nvcc -lcuda -arch=sm_61 -o manybody rkf45.cu manybody.cu`.
 
 # Usage
-Running `./newton -h` will produce the following help message:
+Running `./manybody -h` will produce the following help message:
 ```
-usage:	newton [-h] [-v] [-N N] [-t t1] [-T t2] [-A t3]
+usage:	manybody [-h] [-v] [-N N] [-t t1] [-T t2] [-A t3]
 	 [-d dt] [-L L] [-R R] [-q R0] [-V V] [-H H] [-s seed]
 	 [-r rtol] [-a atol] [-g gpu] filebase  
 
@@ -30,13 +30,13 @@ seed is random seed. Default 1.
 rtol is relative error tolerance. Default 1e-6.
 atol is absolute error tolerance. Default 1e-6.
 gpu is index of the gpu. Default 0.
-filebase is base file name for output. 
+filebase is base file name for output.
 ```
 
 The required positional argument filebase is a string which specifies input and output file locations. Other arguments are optional and modify the simulation parameters.
 
 # Output files
-The newton script creates output files filebase.out, filebasefs.dat, filebasetimes.dat, and filebasestates.dat.
+The manybody script creates output files filebase.out, filebasefs.dat, filebasetimes.dat, and filebasestates.dat.
 
 filebase.out contains parameters that ran the files and runtime output.
 
