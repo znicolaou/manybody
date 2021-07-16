@@ -1,31 +1,23 @@
 //Zachary G. Nicolaou 7/5/2021
 //Simulate Newtons equations with periodic boundaries on a gpu
-#include <complex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <cuda_runtime.h>
-#include "cublas_v2.h"
-
-//Rkf45 coefficients
-const double a1[1] = {1.0/4};
-const double a2[2] = {3.0/32, 9.0/32};
-const double a3[3] = {1932.0/2197, -7200.0/2197, 7296.0/2197};
-const double a4[4] = {439.0/216, -8.0, 3680.0/513, -845.0/4104};
-const double a5[5] = {-8.0/27, 2.0, -3544.0/2565, 1859.0/4104, -11.0/40};
-const double b1[6] = {16.0/135, 0.0, 6656.0/12825, 28561.0/56430, -9.0/50, 2.0/55};
-const double b2[6] = {25.0/216, 0.0, 1408.0/2565, 2197.0/4104, -1.0/5, 0.0};
-const double c[6] = {0.0, 1.0/4, 3.0/8, 12.0/13, 1.0, 1.0/2};
+#include "rkf45.h"
 
 //Parameters
 int M,N,dim;
 double t1, t2, t3, dt, L, R0, R, V, H;
+int *p1, *p2, *orders;
 
-//Should we separate the RK stepper into its own C file, and make a header??
-//It would be better to fuse all these kernels if we can
-
+//The interaction force give separation sqrt(norm) and distance d along a specified axis
+__device__ double force(double d, double norm, double H, double Rt){
+  if(sqrt(norm) < 2*Rt)
+    return -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5);
+  return 0;
+}
 //Set the derivative for the position variables
 __global__ void dydt0 (double t, double* y, double* f, int *p1, int *p2, int N, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
@@ -36,16 +28,8 @@ __global__ void dydt0 (double t, double* y, double* f, int *p1, int *p2, int N, 
     }
   }
 }
-//The interaction force give separation sqrt(norm) and distance d along a specified axis
-//For frictional spheres, we need to allow tangential response, and we should allow heterogeneous sizes
-//We can include other interactions too
-__device__ double force(double d, double norm, double H, double Rt){
-  if(sqrt(norm) < 2*Rt)
-    return -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5);
-  return 0;
-}
 //Set the derivative for the velocity variables
-__global__ void dydt (double t, double t2, double* y, double* f, int *p1, int *p2, int M, double L, double R, double H, double R0, int dim) {
+__global__ void dydt1 (double t, double* y, double* f, int *p1, int *p2, int M, double L, double R, double H, double R0, double t2, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i<M){
     double Rt=R;
@@ -75,55 +59,21 @@ __global__ void dydt (double t, double t2, double* y, double* f, int *p1, int *p
         d=d2;
       if(fabs(d)>fabs(d3))
         d=d3;
-      // atomicAdd(&(f[(2*dim)*p1[i]+dim+k]), -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5));
-      // atomicAdd(&(f[(2*dim)*p2[i]+dim+k]), H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5));
       atomicAdd(&(f[(2*dim)*p1[i]+dim+k]), force(d, norm, H, Rt));
       atomicAdd(&(f[(2*dim)*p2[i]+dim+k]), force(-d, norm, H, Rt));
     }
   }
 }
-//Steps for the RK stepper
-__global__ void step3 (double* y, double* k1, double* k2, double* ytemp, const double a20, const double a21, int N, int dim) {
+//enforce periodic boundary conditions
+__global__ void periodic (double* y, double L, int N, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
-  if(i<(2*dim)*N) {
-    ytemp[i]=y[i]+a20*k1[i]+a21*k2[i];
+  if(i<N){
+    for (int k=0; k<dim; k++){
+      y[(2*dim)*i+k]=fmod(L+y[(2*dim)*i+k],L);
+    }
   }
 }
-__global__ void step4 (double* y, double* k1, double* k2, double* k3, double* ytemp, const double a30, const double a31, const double a32, int N, int dim) {
-  int i = blockIdx.x*blockDim.x + threadIdx.x;
-  if(i<(2*dim)*N) {
-    ytemp[i]=y[i]+a30*k1[i]+a31*k2[i]+a32*k3[i];
-  }
-}
-__global__ void step5 (double* y, double* k1, double* k2, double* k3, double* k4, double* ytemp, const double a40, const double a41, const double a42, const double a43, int N, int dim) {
-  int i = blockIdx.x*blockDim.x + threadIdx.x;
-  if(i<(2*dim)*N) {
-    ytemp[i]=y[i]+a40*k1[i]+a41*k2[i]+a42*k3[i]+a43*k4[i];
-  }
-}
-__global__ void step6 (double* y, double* k1, double* k2, double* k3, double* k4, double* k5, double* ytemp, const double a50, const double a51, const double a52, const double a53, const double a54, int N, int dim) {
-  int i = blockIdx.x*blockDim.x + threadIdx.x;
-  if(i<(2*dim)*N) {
-    ytemp[i]=y[i]+a50*k1[i]+a51*k2[i]+a52*k3[i]+a53*k4[i]+a54*k5[i];
-  }
-}
-//Error estimate for the RK stepper
-__global__ void error (double* y, double* k1, double* k2, double* k3, double* k4, double* k5, double* k6, double* yerr, double* ytemp, const double atl, const double rtl, const double a50, const double a51, const double a52, const double a53, const double a54, const double a55, int N, int dim) {
-  int i = blockIdx.x*blockDim.x + threadIdx.x;
-  if(i<(2*dim)*N) {
-    yerr[i]=(a50*k1[i]+a51*k2[i]+a52*k3[i]+a53*k4[i]+a54*k5[i]+a55*k6[i])/(atl+rtl*y[i]);
-  }
-}
-//Accept the RK step (enforcing periodicity here)
-__global__ void accept (double t, double t2, double* y, double* k1, double* k2, double* k3, double* k4, double* k5, double* k6, const double a50, const double a51, const double a52, const double a53, const double a54, const double a55, int N, double L, double R0, int dim) {
-  int i = blockIdx.x*blockDim.x + threadIdx.x;
-  if(i<(2*dim)*N){
-    if((i%(2*dim))<dim)
-      y[i]=fmod(L+y[i]+a50*k1[i]+a51*k2[i]+a52*k3[i]+a53*k4[i]+a54*k5[i]+a55*k6[i],L);
-    else
-      y[i]=y[i]+a50*k1[i]+a51*k2[i]+a52*k3[i]+a53*k4[i]+a54*k5[i]+a55*k6[i];
-  }
-}
+
 //We can keep a list of all particles making contact at each step instead
 __global__ void order (double t, double t2, double* y, int *p1, int *p2, int *orders, int M, double L, double R, double R0, int *ord, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
@@ -153,50 +103,10 @@ __global__ void order (double t, double t2, double* y, int *p1, int *p2, int *or
   }
 }
 
-//Attempt a RK step
-void rkf45 (cublasHandle_t handle, double *t, double *h, double *y, double *ytemp, int *p1, int *p2, double *k1, double *k2, double *k3, double *k4, double *k5, double *k6, double atl, double *yerr, double rtl){
-  double norm;
-  double A10=*h*a1[0];
-
-  //Calculate the intermediate steps and error estimates using the CUDA kernels
-  cublasDcopy(handle, (2*dim)*N, y, 1, ytemp, 1);
-  dydt0<<<(N+255)/256, 256>>>((*t)+(*h)*c[0],ytemp,k1,p1,p2, N, dim);
-  dydt<<<(M+255)/256, 256>>>((*t)+(*h)*c[0],t2,ytemp,k1,p1,p2, M, L, R, H, R0, dim);
-  cublasDaxpy(handle, (2*dim)*N, &A10, k1, 1, ytemp, 1);
-  dydt0<<<(N+255)/256, 256>>>((*t)+(*h)*c[1],ytemp,k2,p1,p2, N, dim);
-  dydt<<<(M+255)/256, 256>>>((*t)+(*h)*c[1],t2,ytemp,k2,p1,p2, M, L, R, H, R0, dim);
-  step3<<<((2*dim)*N+255)/256, 256>>>(y, k1, k2, ytemp, *h*a2[0], *h*a2[1], N, dim);
-  dydt0<<<(N+255)/256, 256>>>((*t)+(*h)*c[2],ytemp,k3,p1,p2, N, dim);
-  dydt<<<(M+255)/256, 256>>>((*t)+(*h)*c[2],t2,ytemp,k3,p1,p2, M, L, R, H, R0, dim);
-  step4<<<((2*dim)*N+255)/256, 256>>>(y, k1, k2, k3, ytemp, *h*a3[0], *h*a3[1], *h*a3[2], N, dim);
-  dydt0<<<(N+255)/256, 256>>>((*t)+(*h)*c[3],ytemp,k4,p1,p2, N, dim);
-  dydt<<<(M+255)/256, 256>>>((*t)+(*h)*c[3],t2,ytemp,k4,p1,p2, M, L, R, H, R0, dim);
-  step5<<<((2*dim)*N+255)/256, 256>>>(y, k1, k2, k3, k4, ytemp, *h*a4[0], *h*a4[1], *h*a4[2], *h*a4[3], N, dim);
-  dydt0<<<(N+255)/256, 256>>>((*t)+(*h)*c[4],ytemp,k5,p1,p2, N, dim);
-  dydt<<<(M+255)/256, 256>>>((*t)+(*h)*c[4],t2,ytemp,k5,p1,p2, M, L, R, H, R0, dim);
-  step6<<<((2*dim)*N+255)/256, 256>>>(y, k1, k2, k3, k4, k5, ytemp, *h*a5[0], *h*a5[1], *h*a5[2], *h*a5[3], *h*a5[4], N, dim);
-  dydt0<<<(N+255)/256, 256>>>((*t)+(*h)*c[5],ytemp,k6,p1,p2, N, dim);
-  dydt<<<(M+255)/256, 256>>>((*t)+(*h)*c[5],t2,ytemp,k6,p1,p2, M, L, R, H, R0, dim);
-  error<<<((2*dim)*N+255)/256, 256>>>(y, k1, k2, k3, k4, k5, k6, yerr, ytemp, atl, rtl, *h*(b1[0]-b2[0]), *h*(b1[1]-b2[1]), *h*(b1[2]-b2[2]), *h*(b1[3]-b2[3]), *h*(b1[4]-b2[4]), *h*(b1[5]-b2[5]), N, dim);
-
-  //Determine the error norm and step update factor
-  cublasDnrm2(handle, (2*dim)*N, yerr, 1, &norm);
-  norm/=N;
-  double factor=0.9*pow(norm,-0.2);
-  if (factor<0.2)
-    factor=0.2;
-  if (factor>10)
-    factor=10;
-
-  //Accept or reject the step and update the step size
-  if(norm<1){
-    accept<<<((2*dim)*N+255)/256, 256>>>(*t, t2, y,  k1, k2, k3, k4, k5, k6, *h*b1[0], *h*b1[1], *h*b1[2], *h*b1[3], *h*b1[4], *h*b1[5], N, L, R0, dim);
-    (*t)=(*t)+(*h);
-    (*h)*=factor;
-  }
-  else if (factor<1){
-    (*h)*=factor;
-  }
+//function for rkf45
+void dydt(double t, double *y, double *f){
+  dydt0<<<(N+255)/256, 256>>>(t,y,f,p1,p2, N, dim);
+  dydt1<<<(M+255)/256, 256>>>(t,y,f,p1,p2, M, L, R, H, R0, t2, dim);
 }
 
 //Main function
@@ -287,7 +197,7 @@ int main (int argc, char* argv[]) {
       }
     }
     if (help) {
-      printf("usage:\tnewton [-h] [-v] [-N N] [-t t1] [-T t2] [-A t3]\n");
+      printf("usage:\tmanybody [-h] [-v] [-N N] [-t t1] [-T t2] [-A t3]\n");
       printf("\t [-d dt] [-L L] [-R R] [-q R0] [-V V] [-H H] [-s seed]\n");
       printf("\t [-r rtol] [-a atol] [-g gpu] filebase  \n\n");
       printf("-h for help \n");
@@ -329,16 +239,8 @@ int main (int argc, char* argv[]) {
     outorder = fopen(file,"w");
     double *yloc;
     int *p1loc, *p2loc, *ordersloc;
-    double *y, *f, *ytemp, *yerr, *k1, *k2, *k3, *k4, *k5, *k6;
-    int *p1, *p2, *orders;
-    cublasStatus_t stat;
-    cublasHandle_t handle;
     cudaSetDevice(gpu);
-    stat = cublasCreate(&handle);
-    if (stat != CUBLAS_STATUS_SUCCESS) {
-        printf ("CUBLAS initialization failed\n");
-        return EXIT_FAILURE;
-    }
+
     M=N*(N-1)/2; //Number of pairwise interactions
     yloc = (double*)calloc((2*dim)*N,sizeof(double));
     p1loc = (int*)calloc(M,sizeof(int));
@@ -351,19 +253,10 @@ int main (int argc, char* argv[]) {
       printf("GPU Memory low! \n");
       return 0;
     }
-    cudaMalloc ((void**)&y, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&f, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&yerr, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&ytemp, (2*dim)*N*sizeof(double));
+
     cudaMalloc ((void**)&p1, M*sizeof(int));
     cudaMalloc ((void**)&p2, M*sizeof(int));
     cudaMalloc ((void**)&orders, 2*M*sizeof(int));
-    cudaMalloc ((void**)&k1, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&k2, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&k3, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&k4, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&k5, (2*dim)*N*sizeof(double));
-    cudaMalloc ((void**)&k6, (2*dim)*N*sizeof(double));
 
     //Initial conditions
     fprintf(out, "%i %i %f %f %f %f %f %f %f %f %f\n", N, dim, t1, t2, t3, dt, L, R0, R, V, H);
@@ -404,9 +297,11 @@ int main (int argc, char* argv[]) {
     gettimeofday(&start,NULL);
     h = dt/100;
     double tlast=-1;
-    cublasSetVector ((2*dim)*N, sizeof(double), yloc, 1, y, 1);
-    cublasSetVector (M, sizeof(int), p1loc, 1, p1, 1);
-    cublasSetVector (M, sizeof(int), p2loc, 1, p2, 1);
+    cudaMemcpy (p1, p1loc, M*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy (p2, p2loc, M*sizeof(int), cudaMemcpyHostToDevice);
+
+    //if softsphere
+    double* y=rkf45_init(2*dim*N, atl, rtl, yloc, &dydt);
 
     //Main integration loop
     int ordloc[1];
@@ -416,13 +311,16 @@ int main (int argc, char* argv[]) {
       t0=t;
       if(t>=t3){ //Output
         ordloc[0]=0;
-        cublasSetVector (1, sizeof(int), ordloc, 1, ord, 1);
-        order<<<(M+255)/256, 256>>>(t, t2, y,p1,p2, orders, M, L, R, R0, ord, dim);
-        cublasGetVector (1, sizeof(int), ord, 1, ordloc, 1);
-        cublasGetVector (2*M, sizeof(int), orders, 1, ordersloc, 1);
+        cudaMemcpy (ord, ordloc, 1*sizeof(int), cudaMemcpyHostToDevice);
+
+        order<<<(M+255)/256, 256>>>(t, t2, y, p1, p2, orders, M, L, R, R0, ord, dim);
+        cudaMemcpy (ordloc, ord, 1*sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy (ordersloc, orders, (2*M)*sizeof(int), cudaMemcpyDeviceToHost);
+
         fwrite(ordloc,sizeof(int),1,outorder);
         fwrite(ordersloc,sizeof(int),2*ordloc[0],outorder);
-        cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
+        cudaMemcpy (yloc, y, (2*dim)*N*sizeof(double), cudaMemcpyDeviceToHost);
+
         fwrite(yloc,sizeof(double),(2*dim)*N,outstates);
         fflush(outstates);
       }
@@ -443,7 +341,9 @@ int main (int argc, char* argv[]) {
         fflush(outtimes);
         if(t+h>t0+dt)
           h=t0+dt-t;
-        rkf45 (handle, &t, &h, y, ytemp, p1, p2, k1, k2, k3, k4, k5, k6, atl, yerr, rtl);
+        rkf45_step (&t, &h);
+        //if periodic
+        periodic<<<(2*dim*N+255)/256,256>>>(y,L,N,dim);
       }
 
     }
@@ -454,7 +354,8 @@ int main (int argc, char* argv[]) {
     }
     fprintf(out, "\n");
     fflush(out);
-    cublasGetVector ((2*dim)*N, sizeof(double), y, 1, yloc, 1);
+    cudaMemcpy (yloc, y, (2*dim)*N*sizeof(double), cudaMemcpyDeviceToHost);
+
     strcpy(file,filebase);
     strcat(file,"fs.dat");
     outlast=fopen(file,"w");
@@ -470,23 +371,15 @@ int main (int argc, char* argv[]) {
     fclose(outorder);
     fclose(out);
 
-
     //Deallocate
     free(yloc);
     free(p1loc);
     free(p2loc);
-    cudaFree(y);
-    cudaFree(yerr);
-    cudaFree(ytemp);
+    free(ordersloc);
     cudaFree(p1);
     cudaFree(p2);
-    cudaFree(k1);
-    cudaFree(k2);
-    cudaFree(k3);
-    cudaFree(k4);
-    cudaFree(k5);
-    cudaFree(k6);
-    cublasDestroy(handle);
+    cudaFree(orders);
+    rkf45_destroy();
 
     return 0;
 }
