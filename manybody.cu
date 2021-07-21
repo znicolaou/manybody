@@ -8,17 +8,19 @@
 #include "rkf45.h"
 
 //Parameters
-int M,N,dim;
-double t1, t2, t3, dt, L, R0, R, V, H;
+int M,N,dim,bins;
+double t1, t2, t3, dt, L, R0, R, V, H, dmax;
 int *p1, *p2, *orders;
 
 //The interaction force give separation sqrt(norm) and distance d along a specified axis
+//For friction, we'd need to change this to include all directions
 __device__ double force(double d, double norm, double H, double Rt){
   if(sqrt(norm) < 2*Rt)
     return -H*(d/sqrt(norm))*pow(1-sqrt(norm)/(2*Rt),1.5);
   return 0;
 }
 //Set the derivative for the position variables
+//Can add repulsive walls or external forces here as well
 __global__ void dydt0 (double t, double* y, double* f, int *p1, int *p2, int N, int dim) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i<N){
@@ -74,15 +76,11 @@ __global__ void periodic (double* y, double L, int N, int dim) {
   }
 }
 
-//We can keep a list of all particles making contact at each step instead
-__global__ void order (double t, double t2, double* y, int *p1, int *p2, int *orders, int M, double L, double R, double R0, int *ord, int dim) {
+__global__ void order (double t, double t2, double* y, int *p1, int *p2, int *orders, int M, double L, double dmax, int dim, int bins) {
   int i = blockIdx.x*blockDim.x + threadIdx.x;
   if(i<M){
-    double Rt=R;
-    if(t<t2){
-      Rt=R0+t/t2*(R-R0);
-    }
-    double norm=0;
+    int ind=0, ind2=0;
+    int include=1;
     for (int k=0; k<dim; k++){
       //Find the smallest periodic distance in each dimension, and calculate the norm
       double d1=y[(2*dim)*p2[i]+k]-y[(2*dim)*p1[i]+k];
@@ -93,12 +91,16 @@ __global__ void order (double t, double t2, double* y, int *p1, int *p2, int *or
         d=d2;
       if(fabs(d)>fabs(d3))
         d=d3;
-      norm=norm+d*d;
+
+      if (fabs(d)>dmax){
+        include=0;
+      }
+      ind=ind+(int)pow((double)bins,(double)k)*int((d+dmax)*bins/(2*dmax));
+      ind2=ind2+(int)pow((double)bins,(double)k)*int((-d+dmax)*bins/(2*dmax));
     }
-    if(sqrt(norm)<2*Rt){
-      int ind=atomicAdd(ord,1);
-      orders[2*ind]=p1[i];
-      orders[2*ind+1]=p2[i];
+    if(include){
+      atomicAdd(&(orders[ind]),1);
+      atomicAdd(&(orders[ind2]),1);
     }
   }
 }
@@ -118,6 +120,8 @@ int main (int argc, char* argv[]) {
     char* filebase;
     N=512;
     L=32;
+    dmax=5;
+    bins=100;
     R0=0.5;
     R=0.5;
     V=0.1;
@@ -135,10 +139,16 @@ int main (int argc, char* argv[]) {
     char ch;
     int help=1;
     while (optind < argc) {
-      if ((ch = getopt(argc, argv, "N:L:q:D:R:V:H:g:t:T:A:d:s:p:r:a:hv")) != -1) {
+      if ((ch = getopt(argc, argv, "N:b:B:L:q:D:R:V:H:g:t:T:A:d:s:p:r:a:hv")) != -1) {
         switch (ch) {
           case 'N':
               N = (int)atoi(optarg);
+              break;
+          case 'b':
+              bins = (int)atoi(optarg);
+              break;
+          case 'B':
+              dmax = (int)atof(optarg);
               break;
           case 'L':
               L = (double)atof(optarg);
@@ -197,12 +207,13 @@ int main (int argc, char* argv[]) {
       }
     }
     if (help) {
-      printf("usage:\tmanybody [-h] [-v] [-N N] [-t t1] [-T t2] [-A t3]\n");
+      printf("usage:\tmanybody [-h] [-v] [-N N] [-b b] [-t t1] [-T t2] [-A t3]\n");
       printf("\t [-d dt] [-L L] [-R R] [-q R0] [-V V] [-H H] [-s seed]\n");
       printf("\t [-r rtol] [-a atol] [-g gpu] filebase  \n\n");
       printf("-h for help \n");
       printf("-v for verbose \n");
       printf("N is number of particles. Default 2048. \n");
+      printf("b is number of bins for pair correlations. Default 100. \n");
       printf("t1 is total integration time. Default 1e2. \n");
       printf("t2 is time to quasistatically vary the radius from R0 to R. Default 0. \n");
       printf("t3 is time start outputting dense state data. Default 0. \n");
@@ -245,7 +256,7 @@ int main (int argc, char* argv[]) {
     yloc = (double*)calloc((2*dim)*N,sizeof(double));
     p1loc = (int*)calloc(M,sizeof(int));
     p2loc = (int*)calloc(M,sizeof(int));
-    ordersloc = (int*)calloc(2*M,sizeof(int));
+    ordersloc = (int*)calloc((int)pow((double)bins,(double)dim),sizeof(int));
     size_t fr, total;
     cudaMemGetInfo (&fr, &total);
     printf("GPU Memory: %li %li\n", fr, total);
@@ -256,10 +267,10 @@ int main (int argc, char* argv[]) {
 
     cudaMalloc ((void**)&p1, M*sizeof(int));
     cudaMalloc ((void**)&p2, M*sizeof(int));
-    cudaMalloc ((void**)&orders, 2*M*sizeof(int));
+    cudaMalloc ((void**)&orders, (int)pow((double)bins,(double)dim)*sizeof(int));
 
     //Initial conditions
-    fprintf(out, "%i %i %f %f %f %f %f %f %f %f %f\n", N, dim, t1, t2, t3, dt, L, R0, R, V, H);
+    fprintf(out, "%i %i %f %f %f %f %f %f %f %f %f %f\n", N, dim, t1, t2, t3, dt, L, R0, R, V, H, dmax);
     strcpy(file,filebase);
     strcat(file, "ic.dat");
     if ((in = fopen(file,"r")))
@@ -299,28 +310,20 @@ int main (int argc, char* argv[]) {
     double tlast=-1;
     cudaMemcpy (p1, p1loc, M*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy (p2, p2loc, M*sizeof(int), cudaMemcpyHostToDevice);
-
-    //if softsphere
     double* y=rkf45_init(2*dim*N, atl, rtl, yloc, &dydt);
 
+    for(k=0; k<(int)pow((double)bins,(double)dim); k++){
+      ordersloc[k]=0;
+    }
+    cudaMemcpy (orders, ordersloc, (int)pow((double)bins,(double)dim)*sizeof(int), cudaMemcpyHostToDevice);
+
+
     //Main integration loop
-    int ordloc[1];
-    int *ord;
-    cudaMalloc ((void**)&ord, 1*sizeof(int));
     while(t<t1+dt){
       t0=t;
       if(t>=t3){ //Output
-        ordloc[0]=0;
-        cudaMemcpy (ord, ordloc, 1*sizeof(int), cudaMemcpyHostToDevice);
-
-        order<<<(M+255)/256, 256>>>(t, t2, y, p1, p2, orders, M, L, R, R0, ord, dim);
-        cudaMemcpy (ordloc, ord, 1*sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy (ordersloc, orders, (2*M)*sizeof(int), cudaMemcpyDeviceToHost);
-
-        fwrite(ordloc,sizeof(int),1,outorder);
-        fwrite(ordersloc,sizeof(int),2*ordloc[0],outorder);
+        order<<<(M+255)/256, 256>>>(t, t2, y, p1, p2, orders, M, L, dmax, dim, bins);
         cudaMemcpy (yloc, y, (2*dim)*N*sizeof(double), cudaMemcpyDeviceToHost);
-
         fwrite(yloc,sizeof(double),(2*dim)*N,outstates);
         fflush(outstates);
       }
@@ -355,6 +358,10 @@ int main (int argc, char* argv[]) {
     fprintf(out, "\n");
     fflush(out);
     cudaMemcpy (yloc, y, (2*dim)*N*sizeof(double), cudaMemcpyDeviceToHost);
+
+    cudaMemcpy (ordersloc, orders, (int)pow((double)bins,(double)dim)*sizeof(int), cudaMemcpyDeviceToHost);
+    fwrite(ordersloc,sizeof(int),(int)pow((double)bins,(double)dim),outorder);
+
 
     strcpy(file,filebase);
     strcat(file,"fs.dat");
