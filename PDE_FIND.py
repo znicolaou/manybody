@@ -460,7 +460,7 @@ def TrainSTRidge(R, Ut, lam, d_tol, maxit = 25, STR_iters = 10, l0_penalty = Non
     if print_best_tol: print("Optimal tolerance: %f"%tol_best)
     # if print_best_tol: print(f"Optimal tolerance: {tol_best}")
 
-    return w_best,err_best, np.linalg.norm(TrainY - TrainR.dot(w_best), 2) + l0_penalty*np.count_nonzero(w_best)
+    return w_best,np.linalg.norm(TestY - TestR.dot(w_best), 2), np.linalg.norm(TrainY - TrainR.dot(w_best), 2)
 
 def Lasso(X0, Y, lam, w = np.array([0]), maxit = 100, normalize = 2):
     """
