@@ -134,177 +134,37 @@ def build_Theta(data, derivatives, derivatives_description, P, data_description 
     if data_description is not None:
         if len(data_description) != d: raise Exception('data descrption error')
 
-    # Create a list of all polynomials in d variables up to degree P
-    rhs_functions = {}
-    f = lambda x, y : np.prod(np.power(list(x), list(y)))
-    powers = []
-    for p in range(1,P+1):
-            size = d + p - 1
-            for indices in itertools.combinations(range(size), d-1):
-                starts = [0] + [index+1 for index in indices]
-                stops = indices + (size,)
-                powers.append(tuple(map(operator.sub, stops, starts)))
-    for power in powers: rhs_functions[power] = [lambda x, y = power: f(x,y), power]
+    Theta = np.ones((n,0), dtype=np.complex64)
+    descr = []
+    
+    # Create a list of all multiindices for d variables up to degree P
+    indices=()
+    for i in range(0,d):
+        indices=indices+(np.arange(P+1),)
 
-    # First column of Theta is just ones.
-    Theta = np.ones((n,1), dtype=np.complex64)
-    descr = ['']
+    multiindices=[]
+    for x in itertools.product(*indices):
+        current=np.array(x)
+        if(np.sum(x)<=P):
+            multiindices.append(current)
+    multiindices=np.array(multiindices)
 
-    # Add the derivaitves onto Theta
-    for D in range(1,derivatives.shape[1]):
-        Theta = np.hstack([Theta, derivatives[:,D].reshape(n,1)])
-        descr.append(derivatives_description[D])
-
-    # Add on derivatives times polynomials
     for D in range(derivatives.shape[1]):
-        for k in rhs_functions.keys():
-            func = rhs_functions[k][0]
-            new_column = np.zeros((n,1), dtype=np.complex64)
-            for i in range(n):
-                new_column[i] = func(data[i,:])*derivatives[i,D]
-            Theta = np.hstack([Theta, new_column])
-            if data_description is None: descr.append(str(rhs_functions[k][1]) + derivatives_description[D])
+        for multiindex in multiindices:
+            new_column=derivatives[:,D]*np.prod(data**multiindex,axis=1)
+            Theta = np.hstack([Theta, new_column[:,np.newaxis]])
+            if data_description is None: descr.append(str(multiindex) + derivatives_description[D])
             else:
                 function_description = ''
                 for j in range(d):
-                    if rhs_functions[k][1][j] != 0:
-                        if rhs_functions[k][1][j] == 1:
+                    if multiindex[j] != 0:
+                        if multiindex[j] == 1:
                             function_description = function_description + data_description[j]
                         else:
-                            function_description = function_description + data_description[j] + '^' + str(rhs_functions[k][1][j])
+                            function_description = function_description + data_description[j] + '^' + str(multiindex[j])
                 descr.append(function_description + derivatives_description[D])
 
     return Theta, descr
-
-def build_linear_system(u, dt, dx, D = 3, P = 3,time_diff = 'poly',space_diff = 'poly',lam_t = None,lam_x = None, width_x = None,width_t = None, deg_x = 5,deg_t = None,sigma = 2):
-    """
-    Constructs a large linear system to use in later regression for finding PDE.
-    This function works when we are not subsampling the data or adding in any forcing.
-
-    Input:
-        Required:
-            u = data to be fit to a pde
-            dt = temporal grid spacing
-            dx = spatial grid spacing
-        Optional:
-            D = max derivative to include in rhs (default = 3)
-            P = max power of u to include in rhs (default = 3)
-            time_diff = method for taking time derivative
-                        options = 'poly', 'FD', 'FDconv','TV'
-                        'poly' (default) = interpolation with polynomial
-                        'FD' = standard finite differences
-                        'FDconv' = finite differences with convolutional smoothing
-                                   before and after along x-axis at each timestep
-                        'Tik' = Tikhonov (takes very long time)
-            space_diff = same as time_diff with added option, 'Fourier' = differentiation via FFT
-            lam_t = penalization for L2 norm of second time derivative
-                    only applies if time_diff = 'TV'
-                    default = 1.0/(number of timesteps)
-            lam_x = penalization for L2 norm of (n+1)st spatial derivative
-                    default = 1.0/(number of gridpoints)
-            width_x = number of points to use in polynomial interpolation for x derivatives
-                      or width of convolutional smoother in x direction if using FDconv
-            width_t = number of points to use in polynomial interpolation for t derivatives
-            deg_x = degree of polynomial to differentiate x
-            deg_t = degree of polynomial to differentiate t
-            sigma = standard deviation of gaussian smoother
-                    only applies if time_diff = 'FDconv'
-                    default = 2
-    Output:
-        ut = column vector of length u.size
-        R = matrix with ((D+1)*(P+1)) of column, each as large as ut
-        rhs_description = description of what each column in R is
-    """
-
-    n, m = u.shape
-
-    if width_x == None: width_x = n/10
-    if width_t == None: width_t = m/10
-    if deg_t == None: deg_t = deg_x
-
-    # If we're using polynomials to take derviatives, then we toss the data around the edges.
-    if time_diff == 'poly':
-        m2 = m-2*width_t
-        offset_t = width_t
-    else:
-        m2 = m
-        offset_t = 0
-    if space_diff == 'poly':
-        n2 = n-2*width_x
-        offset_x = width_x
-    else:
-        n2 = n
-        offset_x = 0
-
-    if lam_t == None: lam_t = 1.0/m
-    if lam_x == None: lam_x = 1.0/n
-
-    ########################
-    # First take the time derivaitve for the left hand side of the equation
-    ########################
-    ut = np.zeros((n2,m2), dtype=np.complex64)
-
-    if time_diff == 'FDconv':
-        Usmooth = np.zeros((n,m), dtype=np.complex64)
-        # Smooth across x cross-sections
-        for j in range(m):
-            Usmooth[:,j] = ConvSmoother(u[:,j],width_t,sigma)
-        # Now take finite differences
-        for i in range(n2):
-            ut[i,:] = FiniteDiff(Usmooth[i + offset_x,:],dt,1)
-
-    elif time_diff == 'poly':
-        T= np.linspace(0,(m-1)*dt,m)
-        for i in range(n2):
-            ut[i,:] = PolyDiff(u[i+offset_x,:],T,diff=1,width=width_t,deg=deg_t)[:,0]
-
-    elif time_diff == 'Tik':
-        for i in range(n2):
-            ut[i,:] = TikhonovDiff(u[i + offset_x,:], dt, lam_t)
-
-    else:
-        for i in range(n2):
-            ut[i,:] = FiniteDiff(u[i + offset_x,:],dt,1)
-
-    ut = np.reshape(ut, (n2*m2,1), order='F')
-
-    ########################
-    # Now form the rhs one column at a time, and record what each one is
-    ########################
-
-    u2 = u[offset_x:n-offset_x,offset_t:m-offset_t]
-    Theta = np.zeros((n2*m2, (D+1)*(P+1)), dtype=np.complex64)
-    ux = np.zeros((n2,m2), dtype=np.complex64)
-    rhs_description = ['' for i in range((D+1)*(P+1))]
-
-    if space_diff == 'poly':
-        Du = {}
-        for i in range(m2):
-            Du[i] = PolyDiff(u[:,i+offset_t],np.linspace(0,(n-1)*dx,n),diff=D,width=width_x,deg=deg_x)
-    if space_diff == 'Fourier': ik = 1j*np.fft.fftfreq(n)*n
-
-    for d in range(D+1):
-
-        if d > 0:
-            for i in range(m2):
-                if space_diff == 'Tik': ux[:,i] = TikhonovDiff(u[:,i+offset_t], dx, lam_x, d=d)
-                elif space_diff == 'FDconv':
-                    Usmooth = ConvSmoother(u[:,i+offset_t],width_x,sigma)
-                    ux[:,i] = FiniteDiff(Usmooth,dx,d)
-                elif space_diff == 'FD': ux[:,i] = FiniteDiff(u[:,i+offset_t],dx,d)
-                elif space_diff == 'poly': ux[:,i] = Du[i][:,d-1]
-                elif space_diff == 'Fourier': ux[:,i] = np.fft.ifft(ik**d*np.fft.fft(ux[:,i]))
-        else: ux = np.ones((n2,m2), dtype=np.complex64)
-
-        for p in range(P+1):
-            Theta[:, d*(P+1)+p] = np.reshape(np.multiply(ux, np.power(u2,p)), (n2*m2), order='F')
-
-            if p == 1: rhs_description[d*(P+1)+p] = rhs_description[d*(P+1)+p]+'u'
-            elif p>1: rhs_description[d*(P+1)+p] = rhs_description[d*(P+1)+p]+'u^' + str(p)
-            if d > 0: rhs_description[d*(P+1)+p] = rhs_description[d*(P+1)+p]+\
-                                                   'u_{' + ''.join(['x' for _ in range(d)]) + '}'
-
-    return ut, Theta, rhs_description
 
 def print_pde(w, rhs_description, ut = 'u_t'):
     pde = ut + ' = '
@@ -321,61 +181,6 @@ def print_pde(w, rhs_description, ut = 'u_t'):
 ##################################################################################
 # Functions for sparse regression.
 ##################################################################################
-def TrainSTRidge(R, Ut, lam, d_tol, maxit = 25, STR_iters = 10, l0_penalty = None, normalize = 2, split = 0.8, print_results = False):
-    """
-    This function trains a predictor using STRidge.
-
-    It runs over different values of tolerance and trains predictors on a training set, then evaluates them
-    using a loss function on a holdout set.
-
-    Please note published article has typo.  Loss function used here for model selection evaluates fidelity using 2-norm,
-    not squared 2-norm.
-    """
-
-    # Split data into 80% training and 20% test, then search for the best tolderance.
-    np.random.seed(0) # for consistancy
-    n,_ = R.shape
-    train = np.random.choice(n, int(n*split), replace = False)
-    test = [i for i in np.arange(n) if i not in train]
-    TrainR = R[train,:]
-    TestR = R[test,:]
-    TrainY = Ut[train,:]
-    TestY = Ut[test,:]
-    D = TrainR.shape[1]
-
-    # Set up the initial tolerance and l0 penalty
-    d_tol = float(d_tol)
-    tol = d_tol
-    if l0_penalty == None: l0_penalty = 0.001*np.linalg.cond(R)
-
-    # Get the standard least squares estimator
-    w = np.zeros((D,1))
-    w_best = np.linalg.lstsq(TrainR, TrainY,rcond=None)[0]
-    err_best = np.linalg.norm(TestY - TestR.dot(w_best), 2) + l0_penalty*np.count_nonzero(w_best)
-    tol_best = 0
-
-    # Now increase tolerance until test performance decreases
-    for iter in range(maxit):
-        if print_results: print("iter, tol, terms: %i %f %i"%(iter,tol,np.count_nonzero(w)))
-        # Get a set of coefficients and error
-        w = STRidge(TrainR,TrainY,lam,STR_iters,tol,normalize = normalize)
-        err = np.linalg.norm(TestY - TestR.dot(w), 2) + l0_penalty*np.count_nonzero(w)
-
-        # Has the accuracy improved?
-        if err <= err_best:
-            err_best = err
-            w_best = w
-            tol_best = tol
-            tol = tol + d_tol
-
-        else:
-            tol = max([0,tol - 2*d_tol])
-            d_tol  = 2*d_tol / (maxit - iter)
-            tol = tol + d_tol
-
-    if print_results: print("tol_best, terms: %f %i"%(tol_best,np.count_nonzero(w_best)))
-    return w_best,np.linalg.norm(TestY - TestR.dot(w_best), 2), np.linalg.norm(TrainY - TrainR.dot(w_best), 2)
-
 
 def STRidge(X0, y, lam, maxit, tol, normalize = 2, print_results = False):
     """
