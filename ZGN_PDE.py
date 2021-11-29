@@ -166,6 +166,58 @@ def build_Theta(data, derivatives, derivatives_description, P, data_description 
 
     return Theta, descr
 
+
+def build_Theta2(features, P, feature_descriptions = None):
+    """
+    builds a matrix with columns representing polynoimials up to degree P of all variables
+    
+    input:
+        features: features to combine
+        P: max power of polynomial functions
+        feature_descriptions: names of features
+
+    returns:
+        Theta = Theta(U,Q)
+        descr = description of what all the columns in Theta are
+    """
+
+    n,d = features.shape
+
+    if feature_descriptions is not None:
+        if len(feature_descriptions) != d: raise Exception('features descrption error')
+
+    Theta = np.ones((n,0), dtype=np.complex64)
+    descr = []
+    
+    # Create a list of all multiindices for d variables up to degree P
+    indices=()
+    for i in range(0,d):
+        indices=indices+(np.arange(P+1),)
+
+    multiindices=[]
+    for x in itertools.product(*indices):
+        current=np.array(x)
+        if(np.sum(x)<=P):
+            multiindices.append(current)
+    multiindices=np.array(multiindices)
+
+    for multiindex in multiindices:
+        new_column=np.prod(features**multiindex,axis=1)
+        Theta = np.hstack([Theta, new_column[:,np.newaxis]])
+        if feature_descriptions is None: descr.append(str(multiindex))
+        else:
+            function_description = ''
+            for j in range(d):
+                if multiindex[j] != 0:
+                    if multiindex[j] == 1:
+                        function_description = function_description + feature_descriptions[j]
+                    else:
+                        function_description = function_description + feature_descriptions[j] + '^' + str(multiindex[j])
+            descr.append(function_description)
+
+    return Theta, descr
+
+
 def print_pde(w, rhs_description, ut = 'u_t'):
     pde = ut + ' = '
     first = True
