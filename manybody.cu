@@ -212,7 +212,7 @@ int main (int argc, char* argv[]) {
       printf("\t [-r rtol] [-a atol] [-h] [-v]  FILEBASE  \n\n");
       printf("N is number of particles. Default 2048. \n");
       printf("b is number of bins for pair correlations. Default 100. \n");
-      printf("dmax is cutoff distance for neighbor counting. Default 5. \n");
+      printf("dmax is maximum distance for pair correlations. Default 5. \n");
       printf("L is linear system size. Default 32. \n");
       printf("R0 is initial particle radius. Default 0.5. \n");
       printf("dim is the dimension. Default 2. \n");
