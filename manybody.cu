@@ -139,7 +139,7 @@ int main (int argc, char* argv[]) {
     char ch;
     int help=1;
     while (optind < argc) {
-      if ((ch = getopt(argc, argv, "N:b:B:L:q:D:R:V:H:g:t:T:A:d:s:p:r:a:hv")) != -1) {
+      if ((ch = getopt(argc, argv, "N:b:B:L:q:D:R:V:H:g:t:T:A:d:s:r:a:hv")) != -1) {
         switch (ch) {
           case 'N':
               N = (int)atoi(optarg);
@@ -148,7 +148,7 @@ int main (int argc, char* argv[]) {
               bins = (int)atoi(optarg);
               break;
           case 'B':
-              dmax = (int)atof(optarg);
+              dmax = (double)atof(optarg);
               break;
           case 'L':
               L = (double)atof(optarg);
@@ -207,27 +207,29 @@ int main (int argc, char* argv[]) {
       }
     }
     if (help) {
-      printf("usage:\tmanybody [-h] [-v] [-N N] [-b b] [-t t1] [-T t2] [-A t3]\n");
-      printf("\t [-d dt] [-L L] [-R R] [-q R0] [-V V] [-H H] [-s seed]\n");
-      printf("\t [-r rtol] [-a atol] [-g gpu] filebase  \n\n");
-      printf("-h for help \n");
-      printf("-v for verbose \n");
+      printf("usage:\tmanybody  [-N N] [-b b] [-B dmax] [-L L] [-q R0] [-D dim] [-R R]  \n");
+      printf("\t [-V V] [-H H] [-g gpu] [-t t1] [-T t2] [-A t3] [-d dt] [-s seed]\n");
+      printf("\t [-r rtol] [-a atol] [-h] [-v]  FILEBASE  \n\n");
       printf("N is number of particles. Default 2048. \n");
       printf("b is number of bins for pair correlations. Default 100. \n");
+      printf("dmax is cutoff distance for neighbor counting. Default 5. \n");
+      printf("L is linear system size. Default 32. \n");
+      printf("R0 is initial particle radius. Default 0.5. \n");
+      printf("dim is the dimension. Default 2. \n");
+      printf("R is the final particle radius. Default 0.5. \n");
+      printf("V is initial velocity scale. Default 0.1. \n");
+      printf("H is hardness scale. Default 10. \n");
+      printf("gpu is index of the gpu. Default 0.\n");
       printf("t1 is total integration time. Default 1e2. \n");
       printf("t2 is time to quasistatically vary the radius from R0 to R. Default 0. \n");
       printf("t3 is time start outputting dense state data. Default 0. \n");
       printf("dt is the time between outputs. Default 1e0. \n");
-      printf("L is linear system size. Default 32. \n");
-      printf("R is the final particle radius. Default 0.5. \n");
-      printf("R0 is initial particle radius. Default 0.5. \n");
-      printf("V is initial velocity scale. Default 0.1. \n");
-      printf("H is hardness scale. Default 10. \n");
       printf("seed is random seed. Default 1. \n");
       printf("rtol is relative error tolerance. Default 1e-6.\n");
       printf("atol is absolute error tolerance. Default 1e-6.\n");
-      printf("gpu is index of the gpu. Default 0.\n");
-      printf("filebase is base file name for output. \n");
+      printf("-h for help \n");
+      printf("-v for verbose \n");
+      printf("FILEBASE is base file name for output. \n");
       exit(0);
     }
 
